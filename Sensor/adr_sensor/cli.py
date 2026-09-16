@@ -56,6 +56,7 @@ Examples:
   adr-sensor --source copilot             Ingest GitHub Copilot CLI logs only
   adr-sensor --source dsh                 Ingest DeepSeek Harness logs only
   adr-sensor --source opencode            Ingest opencode logs only
+  adr-sensor --source gemini              Ingest Gemini CLI chat sessions
   adr-sensor --save-sessions              Save individual session files
   adr-sensor --output-format jsonl        Export as JSONL
   adr-sensor --otel-config ./otel.json    Export logs to an OTLP/HTTP endpoint

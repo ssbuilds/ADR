@@ -3,8 +3,8 @@ ADR Sensor - Agentic Detection & Response
 
 Security observability library for AI coding agents. Collects telemetry from
 Claude Code, Cursor, Cline, OpenAI Codex CLI, GitHub Copilot CLI, DeepSeek
-Harness, Warp Terminal, opencode, and Claude Desktop Agent Mode (including
-Dispatch sessions) to enable threat detection and security monitoring.
+Harness, Warp Terminal, opencode, Gemini CLI, and Claude Desktop Agent Mode
+(including Dispatch sessions) to enable threat detection and security monitoring.
 
 Usage:
     from adr_sensor import AgentObserver
