@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Import the baseline detectors
 from guardrail.llamafirewall_agent.llamafirewall_baseline import LlamaFirewallBaseline
 from guardrail.adr_agent.adr_baseline import ADRBaseline
+from run_manifest import collect_run_manifest
 
 
 class BenchmarkAnalyzer:
@@ -84,12 +85,26 @@ class BenchmarkAnalyzer:
         # Calculate metrics
         metrics = self._calculate_metrics(analyses, ground_truth)
 
+        selected_task_dirs = task_dirs
+        if task_filter:
+            selected_names = {f"task_{task_id:03d}" for task_id in task_filter}
+            selected_task_dirs = [task_dir for task_dir in task_dirs if task_dir.name in selected_names]
+        run_manifest = collect_run_manifest(
+            detection_root=Path(__file__).parent,
+            results_dir=results_path,
+            benchmark_type=benchmark_type,
+            task_dirs=selected_task_dirs,
+            effective_labels=ground_truth,
+            resolved_concurrency=max_concurrent,
+        )
+
         return {
             'detector_info': self.detector.get_info(),
             'analyses': analyses,
             'metrics': metrics,
             'run_stats': run_stats,
-            'analysis_timestamp': datetime.now().isoformat()
+            'analysis_timestamp': datetime.now().isoformat(),
+            'run_manifest': run_manifest
         }
 
     def _analyze_tasks_efficiently(self, task_dirs: List[Path], task_filter: List[int] = None, max_concurrent: int = 10,
