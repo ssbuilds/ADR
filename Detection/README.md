@@ -291,6 +291,8 @@ benchmark/adr_bench_YYYYMMDD_HHMMSS/
 └── summary.json                       # Original benchmark results
 ```
 
+Each detector result includes an additive `run_manifest` with privacy-safe run provenance: source revision when available, resolved concurrency, sorted selected task IDs, and SHA-256 digests of selected conversations, effective labels, and fixed detector inputs. AgentDojo includes a digest of `ground_truth.json`. Missing provenance is recorded as `null` and never fails detection. Paths, directory names, host identifiers, environment values, prompts, and file contents are not stored.
+
 **Each detector file contains**:
 
 - `detector_info`: Configuration and model information
