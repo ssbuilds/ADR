@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import subprocess
 import sys
@@ -11,6 +12,24 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
 
 _HASH_ALGORITHM = "sha256"
 _GIT_TIMEOUT_SECONDS = 2
+
+
+def read_text_with_sha256(
+    path: Path, *, encoding: Optional[str] = None
+) -> tuple[str, Optional[str]]:
+    """Read once, returning parser input and a best-effort hash of those raw bytes.
+
+    Preserve the caller's text-mode encoding and newline handling. Read/decode
+    errors still reach the existing input loader; only provenance is nonfatal.
+    """
+    content = path.read_bytes()
+    with io.TextIOWrapper(io.BytesIO(content), encoding=encoding) as handle:
+        text = handle.read()
+    try:
+        digest = hashlib.sha256(content).hexdigest()
+    except Exception:
+        digest = None
+    return text, digest
 
 
 def _sha256_file(path: Path) -> Optional[str]:
@@ -58,6 +77,19 @@ def _git_provenance(repo_root: Path) -> Dict[str, Any]:
     }
 
 
+def collect_source_metadata(detection_root: Path) -> Dict[str, Any]:
+    """Capture source and lockfile metadata before detector analysis starts."""
+    try:
+        source = _git_provenance(detection_root.parent)
+    except Exception:
+        source = {"commit": None, "dirty": None}
+    try:
+        uv_lock = _sha256_file(detection_root / "uv.lock")
+    except Exception:
+        uv_lock = None
+    return {"source": source, "uv_lock": uv_lock}
+
+
 def _task_id(task_dir: Path) -> Optional[int]:
     try:
         return int(task_dir.name.removeprefix("task_"))
@@ -65,15 +97,16 @@ def _task_id(task_dir: Path) -> Optional[int]:
         return None
 
 
-def _conversation_provenance(task_dirs: Iterable[Path]) -> Dict[str, Any]:
+def _conversation_provenance(
+    task_dirs: Iterable[Path], conversation_hashes: Mapping[str, Optional[str]]
+) -> Dict[str, Any]:
     selected: list[Dict[str, Any]] = []
     missing: list[int] = []
     for task_dir in task_dirs:
         task_id = _task_id(task_dir)
         if task_id is None:
             continue
-        conversation = task_dir / "workspace" / "claude_conversation.json"
-        digest = _sha256_file(conversation)
+        digest = conversation_hashes.get(task_dir.name)
         if digest is None:
             missing.append(task_id)
         else:
@@ -110,16 +143,18 @@ def _effective_labels_provenance(
 
 def collect_run_manifest(
     *,
-    detection_root: Path,
-    results_dir: Path,
     benchmark_type: str,
     task_dirs: Sequence[Path],
     effective_labels: Mapping[str, bool],
     resolved_concurrency: int,
+    conversation_hashes: Mapping[str, Optional[str]],
+    artifact_hashes: Mapping[str, Optional[str]],
+    source: Mapping[str, Any],
 ) -> Dict[str, Any]:
     """Collect nonfatal, privacy-safe provenance for one detector run.
 
-    The manifest intentionally excludes paths, directory basenames, host names,
+    Assemble only metadata captured at input load time, without rereading files
+    or Git after analysis. Exclude paths, directory basenames, host names,
     environment values, and file contents. Any unavailable metadata is null.
     """
     selected_task_ids = sorted(
@@ -127,29 +162,20 @@ def collect_run_manifest(
     )
 
     try:
-        conversations = _conversation_provenance(task_dirs)
+        conversations = _conversation_provenance(task_dirs, conversation_hashes)
     except Exception:
         conversations = None
     try:
         labels = _effective_labels_provenance(selected_task_ids, effective_labels)
     except Exception:
         labels = None
-    try:
-        git = _git_provenance(detection_root.parent)
-    except Exception:
-        git = {"commit": None, "dirty": None}
-
-    artifact_paths = {
-        "config_detector": detection_root / "config_detector.yaml",
-        "uv_lock": detection_root / "uv.lock",
-        "tasks": detection_root / "tasks.json" if benchmark_type == "adr_bench" else None,
-        "agentdojo_ground_truth": (
-            results_dir / "ground_truth.json" if benchmark_type == "agentdojo" else None
-        ),
-    }
     artifacts = {
-        name: (_sha256_file(path) if path is not None else None)
-        for name, path in artifact_paths.items()
+        "config_detector": artifact_hashes.get("config_detector"),
+        "uv_lock": artifact_hashes.get("uv_lock"),
+        "tasks": artifact_hashes.get("tasks") if benchmark_type == "adr_bench" else None,
+        "agentdojo_ground_truth": (
+            artifact_hashes.get("agentdojo_ground_truth") if benchmark_type == "agentdojo" else None
+        ),
     }
 
     return {
@@ -158,7 +184,7 @@ def collect_run_manifest(
         "benchmark_type": benchmark_type,
         "resolved_concurrency": resolved_concurrency,
         "selected_task_ids": selected_task_ids,
-        "source": git,
+        "source": {"commit": source.get("commit"), "dirty": source.get("dirty")},
         "inputs": {
             "conversations": conversations,
             "effective_labels": labels,
